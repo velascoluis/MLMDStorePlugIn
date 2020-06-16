@@ -18,7 +18,9 @@ setup(
     ],
     entry_points={
         "mlflow.tracking_store": [
-            "mssql=dbstoreplugin.store.artifact:DBArtifactRepository"
+            "http=mlmdstore.store.tracking.mlmd_store:MLMDStore"
         ]
     },
 )
+
+

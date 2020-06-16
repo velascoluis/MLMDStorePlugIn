@@ -40,6 +40,7 @@ from kubeflow.metadata import metadata
 class MLMDStore(AbstractStore):
     #Constantes
     DEFAULT_EXPERIMENT_ID = "0"
+    DEFAULT_WORKSPACE_NAME = "0"
     DATASET = 'dataset'
     MODEL = 'model'
     METRIC = 'metrics'
@@ -49,16 +50,14 @@ class MLMDStore(AbstractStore):
 
     #Constructor
 
-    def __init__(self, metadata_store_host=METADATA_STORE_HOST_DEFAULT, metadata_store_port=METADATA_STORE_PORT_DEFAULT):
+    def __init__(self, metadata_store_host=METADATA_STORE_HOST_DEFAULT, metadata_store_port=METADATA_STORE_PORT_DEFAULT, workspace_name=DEFAULT_WORKSPACE_NAME):
         """
         Create a new MLMDStore with the given mldm host and port
         """
         super(MLMDStore, self).__init__()
-        # default workspace name = experiment default name
-        self.metadata_store_host = metadata_store_host
-        self.metadata_store_port = metadata_store_port
-
-
+        #Generates a new workspace
+        self.mldm_workspace = self._get_or_create_workspace(workspace_name,metadata_store_host,metadata_store_port)
+        print("Workspace "+ workspace_name +" created")
 
     #Funciones core del Abstract
 
@@ -70,6 +69,8 @@ class MLMDStore(AbstractStore):
 
         :return: a list of Experiment objects stored in store for requested view.
         """
+        #aka list runs
+        print("Not yet implemented")
         pass
 
 
@@ -83,11 +84,14 @@ class MLMDStore(AbstractStore):
 
         :return: experiment_id (string) for the newly created experiment if successful, else None.
         """
-        #Creates a new workspace / Experiment proxy
+        # We need to generate a run under the workspace
+
+        workspace = self.mldm_workspace
         if ( name is None):
-            name = Experiment.DEFAULT_EXPERIMENT_NAME
-        self.mldm_workspace = self._get_or_create_workspace(name,self.metadata_store_host,self.metadata_store_port)
-        return (Experiment.DEFAULT_EXPERIMENT_NAME)
+            name = uuid.uuid4().hex
+        self.mldm_run = self._get_or_create_workspace_run(workspace, name)
+        print("Experiment " + name + " created")
+        return (name)
 
 
     def get_experiment(self, experiment_id):
@@ -100,6 +104,8 @@ class MLMDStore(AbstractStore):
             otherwise raises an exception.
 
         """
+        #Logic iterate workspaces, return the one that matches
+        print("Not yet implemented")
         pass
 
     def get_experiment_by_name(self, experiment_name):
@@ -125,6 +131,7 @@ class MLMDStore(AbstractStore):
 
         :param experiment_id: String id for the experiment
         """
+        print("Not yet implemented")
         pass
 
 
@@ -134,6 +141,7 @@ class MLMDStore(AbstractStore):
 
         :param experiment_id: String id for the experiment
         """
+        print("Not yet implemented")
         pass
 
 
@@ -143,6 +151,7 @@ class MLMDStore(AbstractStore):
 
         :param experiment_id: String id for the experiment
         """
+        print("Not yet implemented")
         pass
 
 
@@ -161,6 +170,7 @@ class MLMDStore(AbstractStore):
         :return: A single :py:class:`mlflow.entities.Run` object, if the run exists. Otherwise,
                  raises an exception.
         """
+        print("Not yet implemented")
         pass
 
 
@@ -170,6 +180,7 @@ class MLMDStore(AbstractStore):
 
         :return: :py:class:`mlflow.entities.RunInfo` describing the updated run.
         """
+        print("Not yet implemented")
         pass
 
 
@@ -183,9 +194,10 @@ class MLMDStore(AbstractStore):
 
         :return: The created Run object
         """
-        experiment_id = MLMDStore.DEFAULT_EXPERIMENT_ID if experiment_id is None else experiment_id
-        experiment = self.get_experiment(experiment_id)
+        if experiment_id is None:
+            experiment_id = MLMDStore.DEFAULT_EXPERIMENT_ID
 
+        experiment = self.get_experiment(experiment_id)
         run_uuid = uuid.uuid4().hex
         run_info = RunInfo(run_uuid=run_uuid, run_id=run_uuid, experiment_id=experiment_id,
                            artifact_uri=None, user_id=user_id,
@@ -195,7 +207,9 @@ class MLMDStore(AbstractStore):
 
         for tag in tags:
             self.set_tag(run_uuid, tag)
-        self.mldm_run = self._get_or_create_workspace_run(experiment, run_uuid)
+        exec_name = run_uuid
+        self.mldm_exec = self._get_or_create_run_execution(self.mldm_workspace, self.mldm_run, exec_name)
+        print("Run "+exec_name +" created")
         return self.get_run(run_id=run_uuid)
 
 
@@ -206,6 +220,7 @@ class MLMDStore(AbstractStore):
 
         :param run_id
         """
+        print("Not yet implemented")
         pass
 
 
@@ -215,22 +230,39 @@ class MLMDStore(AbstractStore):
 
         :param run_id
         """
+        print("Not yet implemented")
         pass
 
     def log_metric(self, run_id, metric):
-        _validate_run_id(run_id)
-        _validate_metric_name(metric.key)
-        run_info = self._get_run_info(run_id)
-        check_run_is_active(run_info)
-        self._log_run_metric(run_info, metric)
+        workspace_id = self.mldm_workspace
+        exec = self.mldm_exec
+        metric_type = metric.key
+        metric_timestamp = metric.timestamp
+        metric_value = metric.value
+        metric_log = exec.log_output(
+                metadata.Metrics(
+                    name="mlfow-metric",
+                    metrics_type=metric_type,
+                    uri='file://',
+                    values=metric_value
+            ))
+        print("Output Metric logged")
 
 
     def log_param(self, run_id, param):
-        _validate_run_id(run_id)
-        _validate_param_name(param.key)
-        run_info = self._get_run_info(run_id)
-        check_run_is_active(run_info)
-        self._log_run_param(run_info, param)
+        workspace_id = self.mldm_workspace
+        exec = self.mldm_exec
+        metric_type = param.key
+        metric_timestamp = param.timestamp
+        metric_value = param.value
+        metric_log = exec.log_input(
+            metadata.Metrics(
+                name="mlfow-metric",
+                metrics_type=metric_type,
+                uri='file://',
+                values=metric_value
+            ))
+        print("Input Param logged")
 
     def set_experiment_tag(self, experiment_id, tag):
         """
@@ -239,6 +271,7 @@ class MLMDStore(AbstractStore):
         :param experiment_id: String id for the experiment
         :param tag: :py:class:`mlflow.entities.ExperimentTag` instance to set
         """
+        print("Not yet implemented")
         pass
 
     def set_tag(self, run_id, tag):
@@ -248,7 +281,7 @@ class MLMDStore(AbstractStore):
         :param run_id: String id for the run
         :param tag: :py:class:`mlflow.entities.RunTag` instance to set
         """
-        self.log_batch(run_id, metrics=[], params=[], tags=[tag])
+        print("Not yet implemented")
 
 
     def get_metric_history(self, run_id, metric_key):
@@ -260,6 +293,7 @@ class MLMDStore(AbstractStore):
 
         :return: A list of :py:class:`mlflow.entities.Metric` entities if logged, else empty list
         """
+        print("Not yet implemented")
         pass
 
 
@@ -278,6 +312,7 @@ class MLMDStore(AbstractStore):
             :py:class:`mlflow.entities.Run` objects that satisfy the search expressions,
             and ``token`` is the pagination token for the next page of results.
         """
+        print("Not yet implemented")
         pass
 
     def list_run_infos(self, experiment_id, run_view_type):
@@ -304,6 +339,7 @@ class MLMDStore(AbstractStore):
 
         :return: None.
         """
+        print("Not yet implemented")
         pass
 
 
@@ -323,6 +359,7 @@ class MLMDStore(AbstractStore):
 
         :return: None.
         """
+        print("Not yet implemented")
         pass
 
 
@@ -330,60 +367,33 @@ class MLMDStore(AbstractStore):
 
     #Auxiliares
 
-    #Crea un experimento (workspace)
+    #Crea un  workspace)
     def _get_or_create_workspace(self,ws_name,metadata_store_host, metadata_store_port):
         return metadata.Workspace(
             store=metadata.Store(grpc_host=metadata_store_host, grpc_port=metadata_store_port),
             name=ws_name,
-            description="CNN Text classifier metadata workspace",
+            description="Workspace %s" % ws_name,
             labels={"n1": "v1"})
     #Crea una ejecucion
     def _get_or_create_workspace_run(self,md_workspace, run_name):
         return metadata.Run(
             workspace=md_workspace,
             name=run_name,
-            description="Metadata run for workflow %s" % run_name,
+            description="Experiment %s" % run_name
         )
 
-    def _log_run_metric(self, run_info, metric):
-        workspace_id = run_info.experiment_id
-        run_id = run_info.run_id
-        metric_type = metric.key
-        metric_timestamp = metric.timestamp
-        metric_value = metric.value
-
-        exec = metadata.Execution(
-            name=metric_type+ datetime.utcnow().isoformat("T"),
-            workspace=workspace_id,
-            run=run_id,
-            description="Log metric: " + metric_type+ datetime.utcnow().isoformat("T")
+    #Crea una ejecucion
+    def _get_or_create_run_execution(self,md_workspace, run_name, exec_name):
+        return metadata.Execution(
+            name=exec_name,
+            workspace=md_workspace,
+            run=run_name,
+            description="Run %s" % exec_name
         )
-        metric_log = exec.log_input(
-            metadata.Metrics(
-                metrics_type=metric_type,
-                values=metric_value
-            ))
 
 
 
-    def _log_run_param(self, run_info, param):
-        workspace_id = run_info.experiment_id
-        run_id = run_info.run_id
-        param_type = param.key
-        param_timestamp = param.timestamp
-        param_value = param.value
 
-        exec = metadata.Execution(
-            name=param_type + datetime.utcnow().isoformat("T"),
-            workspace=workspace_id,
-            run=run_id,
-            description="Log metric: " + param_type + datetime.utcnow().isoformat("T")
-        )
-        metric_log = exec.log_input(
-            metadata.Metrics(
-                metrics_type=param_type,
-                values=param_value
-            ))
 
 
 
